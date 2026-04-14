@@ -1,10 +1,71 @@
 import { Command } from "@effect/cli";
 import { Console, Effect, Schema } from "effect";
 import { createHash } from "crypto";
-import { chmod, mkdtemp, rm } from "fs/promises";
+import { chmod, mkdtemp, rename, rm, unlink } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { VERSION } from "../version";
+
+const fsError = (e: unknown): Error =>
+  Object.assign(
+    new Error(e instanceof Error ? e.message : String(e)),
+    { code: (e as any)?.code },
+  );
+
+export const replaceBinary = (
+  newBinaryPath: string,
+  binaryPath: string,
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    yield* Effect.tryPromise({
+      try: () => chmod(newBinaryPath, 0o755),
+      catch: () => new Error("Failed to chmod new binary"),
+    });
+
+    const tempPath = join(dirname(binaryPath), `.polar-update-${Date.now()}`);
+
+    yield* Effect.gen(function* () {
+      const newBinary = yield* Effect.tryPromise({
+        try: () => Bun.file(newBinaryPath).arrayBuffer(),
+        catch: fsError,
+      });
+      yield* Effect.tryPromise({
+        try: () => Bun.write(tempPath, newBinary),
+        catch: fsError,
+      });
+      yield* Effect.tryPromise({
+        try: () => rename(tempPath, binaryPath),
+        catch: fsError,
+      });
+    }).pipe(
+      Effect.tapError(() =>
+        Effect.promise(() => unlink(tempPath).catch(() => {})),
+      ),
+      Effect.catchAll((e: Error) =>
+        (e as any)?.code === "EACCES"
+          ? Effect.gen(function* () {
+              const proc = Bun.spawn(["sudo", "mv", newBinaryPath, binaryPath], {
+                stdout: "inherit",
+                stderr: "inherit",
+                stdin: "inherit",
+              });
+              const exitCode = yield* Effect.tryPromise({
+                try: () => proc.exited,
+                catch: () => new Error("Failed to run sudo mv"),
+              });
+              if (exitCode !== 0) {
+                return yield* Effect.fail(new Error("sudo mv failed"));
+              }
+            })
+          : Effect.fail(e),
+      ),
+    );
+
+    yield* Effect.tryPromise({
+      try: () => chmod(binaryPath, 0o755),
+      catch: () => new Error("Failed to chmod binary"),
+    });
+  });
 
 const REPO = "polarsource/cli";
 
@@ -137,7 +198,7 @@ const downloadAndUpdate = (
         }
 
         const archiveData = yield* Effect.tryPromise({
-          try: () => Bun.file(archivePath).arrayBuffer(),
+          try: () => Bun.file(archivePath).arrayBuffer() as Promise<ArrayBuffer>,
           catch: () => new Error("Failed to read archive for checksum"),
         });
 
@@ -180,17 +241,7 @@ const downloadAndUpdate = (
 
         yield* Console.log(`${dim}Replacing binary...${reset}`);
 
-        yield* Effect.tryPromise({
-          try: async () => {
-            const newBinary = await Bun.file(newBinaryPath).arrayBuffer();
-            await Bun.write(binaryPath, newBinary);
-            await chmod(binaryPath, 0o755);
-          },
-          catch: (e) =>
-            new Error(
-              `Failed to replace binary: ${e instanceof Error ? e.message : e}`,
-            ),
-        });
+        yield* replaceBinary(newBinaryPath, binaryPath);
 
         yield* Console.log("");
         yield* Console.log(
