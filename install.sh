@@ -96,11 +96,6 @@ main() {
   info "Extracting..."
   tar -xzf "${tmpdir}/${archive}" -C "$tmpdir"
 
-  if [[ "$platform" == darwin* ]]; then
-    info "Signing binary..."
-    codesign --force --sign - "${tmpdir}/${BINARY_NAME}"
-  fi
-
   info "Installing to ${INSTALL_DIR}..."
   if [ -w "$INSTALL_DIR" ]; then
     mv "${tmpdir}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
