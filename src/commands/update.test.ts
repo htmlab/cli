@@ -3,11 +3,50 @@ import { mkdtemp, rm, writeFile, readFile, stat } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Effect } from "effect";
-import { replaceBinary } from "./update";
+import {
+  getArchiveExtractionCommand,
+  getReleaseArchiveName,
+  replaceBinary,
+} from "./update";
 
 async function makeTemp() {
   return mkdtemp(join(tmpdir(), "polar-test-"));
 }
+
+describe("getReleaseArchiveName", () => {
+  test("uses zip archives for darwin releases", () => {
+    expect(getReleaseArchiveName({ os: "darwin", arch: "arm64" })).toBe(
+      "polar-darwin-arm64.zip",
+    );
+    expect(getReleaseArchiveName({ os: "darwin", arch: "x64" })).toBe(
+      "polar-darwin-x64.zip",
+    );
+  });
+
+  test("uses tar.gz archives for linux releases", () => {
+    expect(getReleaseArchiveName({ os: "linux", arch: "x64" })).toBe(
+      "polar-linux-x64.tar.gz",
+    );
+  });
+});
+
+describe("getArchiveExtractionCommand", () => {
+  test("uses ditto for zip archives", () => {
+    expect(getArchiveExtractionCommand("/tmp/polar.zip", "/tmp/out")).toEqual([
+      "ditto",
+      "-x",
+      "-k",
+      "/tmp/polar.zip",
+      "/tmp/out",
+    ]);
+  });
+
+  test("uses tar for tar.gz archives", () => {
+    expect(
+      getArchiveExtractionCommand("/tmp/polar.tar.gz", "/tmp/out"),
+    ).toEqual(["tar", "-xzf", "/tmp/polar.tar.gz", "-C", "/tmp/out"]);
+  });
+});
 
 describe("replaceBinary", () => {
   let dir: string;

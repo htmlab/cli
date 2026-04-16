@@ -50,6 +50,15 @@ get_latest_version() {
   echo "$version"
 }
 
+get_archive_name() {
+  local platform="$1"
+
+  case "$platform" in
+    darwin-*) echo "${BINARY_NAME}-${platform}.zip" ;;
+    *) echo "${BINARY_NAME}-${platform}.tar.gz" ;;
+  esac
+}
+
 main() {
   local platform version url
 
@@ -61,7 +70,8 @@ main() {
   version="$(get_latest_version)"
   info "Version: ${version}"
 
-  local archive="${BINARY_NAME}-${platform}.tar.gz"
+  local archive
+  archive="$(get_archive_name "$platform")"
   local url="https://github.com/${REPO}/releases/download/${version}/${archive}"
   local checksums_url="https://github.com/${REPO}/releases/download/${version}/checksums.txt"
 
@@ -94,7 +104,11 @@ main() {
   info "Checksum verified"
 
   info "Extracting..."
-  tar -xzf "${tmpdir}/${archive}" -C "$tmpdir"
+  case "$archive" in
+    *.zip) ditto -x -k "${tmpdir}/${archive}" "$tmpdir" ;;
+    *.tar.gz) tar -xzf "${tmpdir}/${archive}" -C "$tmpdir" ;;
+    *) error "Unsupported archive format: ${archive}" ;;
+  esac
 
   info "Installing to ${INSTALL_DIR}..."
   if [ -w "$INSTALL_DIR" ]; then
