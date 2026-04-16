@@ -114,6 +114,29 @@ function detectPlatform(): { os: string; arch: string } {
   return { os, arch: normalizedArch };
 }
 
+export function getReleaseArchiveName(platform: {
+  os: string;
+  arch: string;
+}): string {
+  const baseName = `polar-${platform.os}-${platform.arch}`;
+  return platform.os === "darwin" ? `${baseName}.zip` : `${baseName}.tar.gz`;
+}
+
+export function getArchiveExtractionCommand(
+  archivePath: string,
+  destinationDir: string,
+): string[] {
+  if (archivePath.endsWith(".zip")) {
+    return ["ditto", "-x", "-k", archivePath, destinationDir];
+  }
+
+  if (archivePath.endsWith(".tar.gz")) {
+    return ["tar", "-xzf", archivePath, "-C", destinationDir];
+  }
+
+  throw new Error(`Unsupported archive format: ${archivePath}`);
+}
+
 const downloadAndUpdate = (
   release: typeof GitHubRelease.Type,
   latestVersion: string,
@@ -127,7 +150,7 @@ const downloadAndUpdate = (
 
     const { os, arch } = detectPlatform();
     const platform = `${os}-${arch}`;
-    const archiveName = `polar-${platform}.tar.gz`;
+    const archiveName = getReleaseArchiveName({ os, arch });
 
     const asset = release.assets.find((a) => a.name === archiveName);
     if (!asset) {
@@ -216,20 +239,23 @@ const downloadAndUpdate = (
 
         yield* Console.log(`${dim}Extracting...${reset}`);
 
-        const tar = Bun.spawn(["tar", "-xzf", archivePath, "-C", tempDir], {
-          stdout: "ignore",
-          stderr: "pipe",
-        });
+        const extract = Bun.spawn(
+          getArchiveExtractionCommand(archivePath, tempDir),
+          {
+            stdout: "ignore",
+            stderr: "pipe",
+          },
+        );
 
-        const tarExitCode = yield* Effect.tryPromise({
-          try: () => tar.exited,
+        const extractExitCode = yield* Effect.tryPromise({
+          try: () => extract.exited,
           catch: () => new Error("Failed to extract archive"),
         });
 
-        if (tarExitCode !== 0) {
+        if (extractExitCode !== 0) {
           const stderr = yield* Effect.tryPromise({
-            try: () => new Response(tar.stderr).text(),
-            catch: () => new Error("Failed to read tar stderr"),
+            try: () => new Response(extract.stderr).text(),
+            catch: () => new Error("Failed to read archive extractor stderr"),
           });
           return yield* Effect.fail(
             new Error(`Failed to extract archive: ${stderr}`),

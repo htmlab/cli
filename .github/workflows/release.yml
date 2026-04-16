@@ -6,11 +6,13 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -25,17 +27,19 @@ jobs:
 
   build:
     needs: test
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
           - target: bun-darwin-arm64
-            artifact: polar-darwin-arm64
-            os: ubuntu-latest
+            archive: polar-darwin-arm64.zip
+            os: macos-15
           - target: bun-darwin-x64
-            artifact: polar-darwin-x64
-            os: ubuntu-latest
+            archive: polar-darwin-x64.zip
+            os: macos-15
           - target: bun-linux-x64
-            artifact: polar-linux-x64
+            archive: polar-linux-x64.tar.gz
             os: ubuntu-latest
 
     runs-on: ${{ matrix.os }}
@@ -53,16 +57,23 @@ jobs:
         run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile polar
 
       - name: Package binary
-        run: tar -czf ${{ matrix.artifact }}.tar.gz polar
+        run: |
+          if [[ "${{ matrix.archive }}" == *.zip ]]; then
+            ditto -c -k --keepParent polar "${{ matrix.archive }}"
+          else
+            tar -czf "${{ matrix.archive }}" polar
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.tar.gz
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/download-artifact@v4
@@ -70,12 +81,13 @@ jobs:
           merge-multiple: true
 
       - name: Generate checksums
-        run: sha256sum *.tar.gz > checksums.txt
+        run: sha256sum *.tar.gz *.zip > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             *.tar.gz
+            *.zip
             checksums.txt
           generate_release_notes: true
