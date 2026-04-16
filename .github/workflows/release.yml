@@ -90,7 +90,12 @@ jobs:
         if: ${{ matrix.sign }}
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
-        run: codesign --force --options runtime --sign "$MACOS_SIGNING_IDENTITY" --timestamp ./polar
+        run: |
+          codesign --force --options runtime \
+            --entitlements ./.github/macos-entitlements.plist \
+            --sign "$MACOS_SIGNING_IDENTITY" \
+            --timestamp \
+            ./polar
 
       - name: Verify macOS signature
         if: ${{ matrix.sign }}
