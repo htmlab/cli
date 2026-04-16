@@ -125,7 +125,7 @@ jobs:
       - name: Package binary
         run: |
           if [[ "${{ matrix.archive }}" == *.zip ]]; then
-            ditto -c -k --keepParent polar "${{ matrix.archive }}"
+            ditto -c -k polar "${{ matrix.archive }}"
           else
             tar -czf "${{ matrix.archive }}" polar
           fi
